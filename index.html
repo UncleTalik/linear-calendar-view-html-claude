@@ -129,6 +129,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .modal-desc h2 { font-size: 14px; }
 .modal-desc h3 { font-size: 13px; }
 .modal-desc blockquote { border-left: 3px solid #ddd; margin: 0 0 8px; padding: 2px 10px; color: #777; }
+.modal-desc a { color: #4F67E4; text-decoration: none; }
+.modal-desc a:hover { text-decoration: underline; }
 .modal-meta { padding: 0 20px 20px; display: flex; flex-direction: column; gap: 8px; }
 .modal-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .modal-label { color: #999; width: 80px; flex-shrink: 0; }
@@ -454,8 +456,10 @@ function renderMarkdown(text) {
     s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
     // strikethrough
     s = s.replace(/~~(.+?)~~/g, '<s>$1</s>');
-    // links
+    // markdown links [text](url) — must run before bare URL auto-linking
     s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    // bare URLs — skip ones already inside href="..."
+    s = s.replace(/(?<!href=")(https?:\/\/[^\s<>"]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
     return s;
   }
 }
