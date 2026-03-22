@@ -16,7 +16,12 @@ body {
 h1 { font-size: 17px; font-weight: 600; margin-bottom: 18px; color: #111; }
 
 .setup { background: #fff; border: 1px solid #e5e5e3; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-.setup-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.setup-header { display: flex; justify-content: space-between; align-items: center; cursor: pointer; -webkit-user-select: none; user-select: none; }
+.setup-header.open { margin-bottom: 12px; }
+.setup-toggle { font-size: 10px; color: #999; margin-right: 6px; transition: transform 0.15s; display: inline-block; }
+.setup-header.open .setup-toggle { transform: rotate(90deg); }
+.setup-body { display: none; }
+.setup-body.open { display: block; }
 .setup-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #999; }
 .ws-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
 .ws-label { font-size: 13px; color: #555; width: 100px; flex-shrink: 0; }
@@ -67,6 +72,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   border-radius: 5px; padding: 4px 7px; margin-bottom: 4px;
   font-size: 11px; line-height: 1.45; overflow: hidden; cursor: default; min-width: 0;
 }
+.pill { cursor: pointer; }
+.pill:hover { filter: brightness(0.96); }
 .pill-title { display: block; font-weight: 500; word-break: break-word; overflow-wrap: break-word; white-space: normal; }
 .pill.done { opacity: 0.5; }
 .pill.done .pill-title { text-decoration: line-through; font-weight: 400; }
@@ -86,6 +93,44 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   .day.empty { opacity: 1; }
 }
 
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35);
+  z-index: 100; justify-content: center; align-items: center; padding: 16px;
+}
+.modal-overlay.open { display: flex; }
+.modal-card {
+  background: #fff; border-radius: 14px; max-width: 520px; width: 100%;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.18); overflow: hidden;
+  animation: modalIn 0.15s ease-out;
+}
+@keyframes modalIn { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+.modal-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  padding: 20px 20px 0; gap: 12px;
+}
+.modal-id { font-size: 12px; color: #999; font-weight: 500; }
+.modal-title { font-size: 16px; font-weight: 600; color: #111; padding: 6px 20px 0; line-height: 1.4; }
+.modal-desc {
+  font-size: 13px; color: #555; line-height: 1.6; padding: 12px 20px;
+  max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+}
+.modal-meta { padding: 0 20px 20px; display: flex; flex-direction: column; gap: 8px; }
+.modal-row { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.modal-label { color: #999; width: 80px; flex-shrink: 0; }
+.modal-value { color: #333; }
+.modal-status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.modal-close {
+  background: none; border: none; font-size: 18px; color: #999; cursor: pointer;
+  padding: 0; line-height: 1; flex-shrink: 0;
+}
+.modal-close:hover { color: #333; }
+.modal-divider { height: 1px; background: #eee; margin: 0 20px; }
+.modal-link {
+  display: inline-block; font-size: 12px; color: #4F67E4; text-decoration: none;
+  margin: 0 20px 16px; padding: 6px 12px; border: 1px solid #4F67E4; border-radius: 6px;
+}
+.modal-link:hover { background: rgba(79,103,228,0.06); }
+
 .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #eee; }
 .leg-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #555; }
 .leg-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
@@ -96,10 +141,11 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   <h1>Linear Weekly View</h1>
 
   <div class="setup">
-    <div class="setup-header">
-      <span class="setup-title">Workspaces</span>
-      <button class="btn-sm" onclick="forgetKeys()">Forget saved keys</button>
+    <div class="setup-header" id="setup-header" onclick="toggleSetup()">
+      <span class="setup-title"><span class="setup-toggle">▶</span>Workspaces</span>
+      <button class="btn-sm" onclick="forgetKeys(); event.stopPropagation();">Forget saved keys</button>
     </div>
+    <div class="setup-body" id="setup-body">
     <div class="ws-row">
       <span class="ws-label">Workspace 1</span>
       <input type="password" id="t1" placeholder="lin_api_..." autocomplete="off">
@@ -118,6 +164,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
       <div class="ws-dot" id="ws2-dot"></div>
       <span id="ws2-name"></span>
     </div>
+    </div>
   </div>
 
   <div class="err" id="err"></div>
@@ -133,6 +180,20 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 
   <div class="grid" id="grid"></div>
   <div class="legend" id="legend"></div>
+</div>
+
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal-card" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <span class="modal-id" id="modal-id"></span>
+      <button class="modal-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div class="modal-title" id="modal-title"></div>
+    <div class="modal-desc" id="modal-desc"></div>
+    <div class="modal-divider"></div>
+    <div class="modal-meta" id="modal-meta"></div>
+    <a class="modal-link" id="modal-link" href="#" target="_blank" rel="noopener">Open in Linear &rarr;</a>
+  </div>
 </div>
 
 <script>
@@ -201,7 +262,7 @@ async function fetchAndRender() {
   const q = `query {
     issues(first: 250, filter: { dueDate: { gte: "${s}", lte: "${e}" } }) {
       nodes {
-        id identifier title dueDate
+        id identifier title description dueDate url
         project { id name color }
         state { name type }
         assignee { displayName }
@@ -283,6 +344,7 @@ function renderWeek() {
         const meta = [issue.project?.name, issue.assignee?.displayName].filter(Boolean).join(' · ');
         pill.title = [issue.identifier, issue.title, meta].filter(Boolean).join(' · ');
         pill.innerHTML = `<span class="pill-title" style="color:${text}">${issue.title}</span>`;
+        pill.onclick = () => openModal(issue);
         col.appendChild(pill);
         if (issue.project) seenProjects[issue.project.id] = issue.project;
       });
@@ -312,6 +374,46 @@ async function autoConnect() {
     const saved = localStorage.getItem('linear_token_' + n);
     if (saved) { document.getElementById('t' + n).value = saved; await connect(n); }
   }
+}
+
+function openModal(issue) {
+  document.getElementById('modal-id').textContent = issue.identifier || '';
+  document.getElementById('modal-title').textContent = issue.title || '';
+  const desc = issue.description || 'No description';
+  document.getElementById('modal-desc').textContent = desc;
+
+  const meta = document.getElementById('modal-meta');
+  const rows = [
+    { label: 'Status', value: issue.state?.name || '—' },
+    { label: 'Workspace', value: issue._wsName || '—', dot: issue._wsColor },
+    { label: 'Project', value: issue.project?.name || '—', dot: issue.project?.color },
+    { label: 'Assignee', value: issue.assignee?.displayName || 'Unassigned' },
+    { label: 'Due date', value: issue.dueDate ? new Date(issue.dueDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '—' },
+  ];
+  meta.innerHTML = rows.map(r => {
+    const dot = r.dot ? `<div class="modal-status-dot" style="background:${r.dot}"></div>` : '';
+    return `<div class="modal-row"><span class="modal-label">${r.label}</span>${dot}<span class="modal-value">${r.value}</span></div>`;
+  }).join('');
+
+  const link = document.getElementById('modal-link');
+  if (issue.url) { link.href = issue.url; link.style.display = ''; }
+  else { link.style.display = 'none'; }
+
+  document.getElementById('modal-overlay').classList.add('open');
+  document.addEventListener('keydown', modalEsc);
+}
+
+function closeModal(e) {
+  if (e && e.target && e.target !== document.getElementById('modal-overlay')) return;
+  document.getElementById('modal-overlay').classList.remove('open');
+  document.removeEventListener('keydown', modalEsc);
+}
+
+function modalEsc(e) { if (e.key === 'Escape') closeModal(); }
+
+function toggleSetup() {
+  document.getElementById('setup-header').classList.toggle('open');
+  document.getElementById('setup-body').classList.toggle('open');
 }
 
 function forgetKeys() {
