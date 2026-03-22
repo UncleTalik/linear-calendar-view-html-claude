@@ -457,7 +457,7 @@ function renderMarkdown(text) {
     // strikethrough
     s = s.replace(/~~(.+?)~~/g, '<s>$1</s>');
     // markdown links [text](url) — must run before bare URL auto-linking
-    s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    s = s.replace(/\[([^\]]+)\]\(<?(https?:\/\/[^)>]+)>?\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
     // bare URLs — skip ones already inside href="..."
     s = s.replace(/(?<!href=")(https?:\/\/[^\s<>"]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
     return s;
