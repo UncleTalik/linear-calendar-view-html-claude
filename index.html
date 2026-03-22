@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Linear Weekly View</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #f5f5f4; color: #1a1a1a; font-size: 14px;
+  -webkit-text-size-adjust: 100%;
+}
+
+.app { max-width: 1100px; margin: 0 auto; padding: 20px 16px; }
+h1 { font-size: 17px; font-weight: 600; margin-bottom: 18px; color: #111; }
+
+.setup { background: #fff; border: 1px solid #e5e5e3; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+.setup-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.setup-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #999; }
+.ws-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+.ws-label { font-size: 13px; color: #555; width: 100px; flex-shrink: 0; }
+input[type=password] {
+  flex: 1; min-width: 160px; padding: 8px 11px;
+  border: 1px solid #ddd; border-radius: 8px;
+  font-size: 13px; background: #fafaf9; color: #111; outline: none;
+}
+input:focus { border-color: #888; background: #fff; }
+.ws-badge { display: none; align-items: center; gap: 6px; font-size: 12px; color: #666; margin: 2px 0 10px 108px; }
+.ws-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+button {
+  padding: 8px 14px; border: 1px solid #ddd; border-radius: 8px;
+  background: #fff; font-size: 13px; cursor: pointer; color: #111;
+  white-space: nowrap; transition: background 0.1s; -webkit-tap-highlight-color: transparent;
+}
+button:hover { background: #f0f0ef; }
+button:active { background: #e8e8e7; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-sm { font-size: 11px; color: #999; border-color: #eee; padding: 4px 10px; }
+
+.controls { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.week-label { font-size: 15px; font-weight: 600; flex: 1; min-width: 140px; }
+.status-txt { font-size: 12px; color: #999; }
+.err { font-size: 12px; color: #c0392b; min-height: 16px; margin-bottom: 6px; }
+
+/* Desktop: 7-col grid, no overflow */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  align-items: start;
+  width: 100%;
+}
+
+.day {
+  background: #fff; border: 1px solid #e5e5e3; border-radius: 10px;
+  padding: 10px 8px; min-height: 110px; overflow: hidden; min-width: 0;
+}
+.day.today { border-color: #4F67E4; }
+.day-name { font-size: 10px; color: #aaa; text-transform: uppercase; letter-spacing: 0.04em; }
+.day-num { font-size: 18px; font-weight: 600; color: #111; margin: 2px 0 7px; line-height: 1; }
+.day-num.is-today { color: #4F67E4; }
+.dash { font-size: 13px; color: #ddd; margin-top: 2px; }
+
+.pill {
+  border-radius: 5px; padding: 4px 7px; margin-bottom: 4px;
+  font-size: 11px; line-height: 1.45; overflow: hidden; cursor: default; min-width: 0;
+}
+.pill-title { display: block; font-weight: 500; word-break: break-word; overflow-wrap: break-word; white-space: normal; }
+.pill.done { opacity: 0.5; }
+.pill.done .pill-title { text-decoration: line-through; font-weight: 400; }
+
+/* Mobile: single column stacked */
+@media (max-width: 639px) {
+  .grid { grid-template-columns: 1fr; gap: 8px; }
+  .day { min-height: unset; padding: 12px 14px; display: flex; flex-direction: column; }
+  .day.empty { opacity: 0.4; }
+  .day-header-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .day-name { font-size: 12px; }
+  .day-num { font-size: 22px; margin: 0; }
+  .pill { font-size: 13px; padding: 6px 10px; margin-bottom: 6px; }
+}
+@media (min-width: 640px) {
+  .day-header-row { display: block; }
+  .day.empty { opacity: 1; }
+}
+
+.legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #eee; }
+.leg-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #555; }
+.leg-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+<div class="app">
+  <h1>Linear Weekly View</h1>
+
+  <div class="setup">
+    <div class="setup-header">
+      <span class="setup-title">Workspaces</span>
+      <button class="btn-sm" onclick="forgetKeys()">Forget saved keys</button>
+    </div>
+    <div class="ws-row">
+      <span class="ws-label">Workspace 1</span>
+      <input type="password" id="t1" placeholder="lin_api_..." autocomplete="off">
+      <button id="btn1" onclick="connect(1)">Connect</button>
+    </div>
+    <div class="ws-badge" id="ws1-badge">
+      <div class="ws-dot" id="ws1-dot"></div>
+      <span id="ws1-name"></span>
+    </div>
+    <div class="ws-row">
+      <span class="ws-label">Workspace 2</span>
+      <input type="password" id="t2" placeholder="lin_api_... (optional)" autocomplete="off">
+      <button id="btn2" onclick="connect(2)">Connect</button>
+    </div>
+    <div class="ws-badge" id="ws2-badge">
+      <div class="ws-dot" id="ws2-dot"></div>
+      <span id="ws2-name"></span>
+    </div>
+  </div>
+
+  <div class="err" id="err"></div>
+
+  <div class="controls">
+    <button onclick="shiftWeek(-1)">← Prev</button>
+    <button onclick="shiftWeek(1)">Next →</button>
+    <div class="week-label" id="week-label"></div>
+    <button onclick="goToday()" style="color:#888">Today</button>
+    <button onclick="fetchAndRender()" style="color:#888">↻ Refresh</button>
+    <span class="status-txt" id="status"></span>
+  </div>
+
+  <div class="grid" id="grid"></div>
+  <div class="legend" id="legend"></div>
+</div>
+
+<script>
+const WS_COLORS = ['#4F67E4', '#E4944F'];
+const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+let weekStart = getSunday(new Date());
+let allIssues = [];
+let workspaces = {};
+
+function getSunday(d) {
+  const m = new Date(d);
+  m.setDate(d.getDate() - d.getDay());
+  m.setHours(0,0,0,0);
+  return m;
+}
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function isoDate(d) {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${mo}-${day}`;
+}
+function fmtShort(d) { return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+
+async function linearGQL(token, query) {
+  const res = await fetch('https://api.linear.app/graphql', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': token },
+    body: JSON.stringify({ query })
+  });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const json = await res.json();
+  if (json.errors) throw new Error(json.errors[0].message);
+  return json.data;
+}
+
+async function connect(n) {
+  const token = document.getElementById('t' + n).value.trim();
+  if (!token) return;
+  const btn = document.getElementById('btn' + n);
+  btn.textContent = '…'; btn.disabled = true;
+  document.getElementById('err').textContent = '';
+  try {
+    const data = await linearGQL(token, `{ viewer { name } organization { name } }`);
+    workspaces[n] = { token, orgName: data.organization.name, color: WS_COLORS[n - 1] };
+    localStorage.setItem('linear_token_' + n, token);
+    document.getElementById('ws' + n + '-dot').style.background = WS_COLORS[n - 1];
+    document.getElementById('ws' + n + '-name').textContent = data.organization.name + ' · ' + data.viewer.name;
+    document.getElementById('ws' + n + '-badge').style.display = 'flex';
+    btn.textContent = 'Refresh'; btn.disabled = false;
+    await fetchAndRender();
+  } catch(e) {
+    document.getElementById('err').textContent = 'Workspace ' + n + ': ' + e.message;
+    btn.textContent = 'Connect'; btn.disabled = false;
+  }
+}
+
+async function fetchAndRender() {
+  const wsList = Object.values(workspaces);
+  if (!wsList.length) return;
+  document.getElementById('status').textContent = 'Loading…';
+  allIssues = [];
+
+  const s = isoDate(addDays(weekStart, -1));
+  const e = isoDate(addDays(weekStart, 8));
+  const q = `query {
+    issues(first: 250, filter: { dueDate: { gte: "${s}", lte: "${e}" } }) {
+      nodes {
+        id identifier title dueDate
+        project { id name color }
+        state { name type }
+        assignee { displayName }
+      }
+    }
+  }`;
+
+  for (const ws of wsList) {
+    try {
+      const data = await linearGQL(ws.token, q);
+      data.issues.nodes.forEach(i => { i._wsColor = ws.color; i._wsName = ws.orgName; });
+      allIssues.push(...data.issues.nodes);
+    } catch(e) {
+      document.getElementById('err').textContent = ws.orgName + ': ' + e.message;
+    }
+  }
+
+  document.getElementById('status').textContent =
+    allIssues.length + ' issue' + (allIssues.length !== 1 ? 's' : '');
+  renderWeek();
+}
+
+function hexToRgb(h) {
+  const r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h);
+  return r ? [parseInt(r[1],16), parseInt(r[2],16), parseInt(r[3],16)] : [80,103,228];
+}
+function pillStyle(hex) {
+  const [r,g,b] = hexToRgb(hex || '#4F67E4');
+  const lum = 0.299*r + 0.587*g + 0.114*b;
+  const bg = `rgba(${r},${g},${b},0.13)`;
+  const text = lum > 150
+    ? `rgb(${Math.round(r*0.38)},${Math.round(g*0.38)},${Math.round(b*0.38)})`
+    : lum < 80
+      ? `rgb(${Math.min(255,r+130)},${Math.min(255,g+130)},${Math.min(255,b+130)})`
+      : hex;
+  return { bg, text };
+}
+
+function renderWeek() {
+  const grid = document.getElementById('grid');
+  const todayStr = isoDate(new Date());
+  const isMobile = window.innerWidth < 640;
+  grid.innerHTML = '';
+  const seenProjects = {};
+
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(weekStart, i);
+    const ds = isoDate(d);
+    const isToday = ds === todayStr;
+    const dayIssues = allIssues
+      .filter(is => is.dueDate && is.dueDate.startsWith(ds))
+      .sort((a, b) => {
+        const aDone = a.state?.type === 'completed' || a.state?.type === 'cancelled';
+        const bDone = b.state?.type === 'completed' || b.state?.type === 'cancelled';
+        return aDone - bDone;
+      });
+    const isEmpty = dayIssues.length === 0;
+
+    const col = document.createElement('div');
+    col.className = 'day' + (isToday ? ' today' : '') + (isEmpty && isMobile ? ' empty' : '');
+
+    const hdr = document.createElement('div');
+    hdr.className = 'day-header-row';
+    hdr.innerHTML =
+      `<div class="day-name">${DAYS[i]}</div>` +
+      `<div class="day-num${isToday ? ' is-today' : ''}">${d.getDate()}</div>`;
+    col.appendChild(hdr);
+
+    if (isEmpty) {
+      col.innerHTML += `<div class="dash">—</div>`;
+    } else {
+      dayIssues.forEach(issue => {
+        const color = issue.project?.color || issue._wsColor;
+        const { bg, text } = pillStyle(color);
+        const pill = document.createElement('div');
+        const isDone = issue.state?.type === 'completed' || issue.state?.type === 'cancelled';
+        pill.className = 'pill' + (isDone ? ' done' : '');
+        pill.style.background = bg;
+        const meta = [issue.project?.name, issue.assignee?.displayName].filter(Boolean).join(' · ');
+        pill.title = [issue.identifier, issue.title, meta].filter(Boolean).join(' · ');
+        pill.innerHTML = `<span class="pill-title" style="color:${text}">${issue.title}</span>`;
+        col.appendChild(pill);
+        if (issue.project) seenProjects[issue.project.id] = issue.project;
+      });
+    }
+    grid.appendChild(col);
+  }
+
+  const legend = document.getElementById('legend');
+  legend.innerHTML = '';
+  Object.values(seenProjects).forEach(p => {
+    legend.innerHTML += `<div class="leg-item"><div class="leg-swatch" style="background:${p.color||'#888'}"></div><span>${p.name}</span></div>`;
+  });
+  Object.values(workspaces).forEach(ws => {
+    legend.innerHTML += `<div class="leg-item"><div class="leg-swatch" style="background:${ws.color};border-radius:50%"></div><span>${ws.orgName}</span></div>`;
+  });
+}
+
+function updateLabel() {
+  document.getElementById('week-label').textContent =
+    fmtShort(weekStart) + ' – ' + fmtShort(addDays(weekStart, 6));
+}
+function shiftWeek(n) { weekStart = addDays(weekStart, n * 7); updateLabel(); fetchAndRender(); }
+function goToday() { weekStart = getSunday(new Date()); updateLabel(); fetchAndRender(); }
+
+async function autoConnect() {
+  for (const n of [1, 2]) {
+    const saved = localStorage.getItem('linear_token_' + n);
+    if (saved) { document.getElementById('t' + n).value = saved; await connect(n); }
+  }
+}
+
+function forgetKeys() {
+  [1,2].forEach(n => {
+    localStorage.removeItem('linear_token_' + n);
+    document.getElementById('t' + n).value = '';
+    document.getElementById('ws' + n + '-badge').style.display = 'none';
+    const btn = document.getElementById('btn' + n);
+    btn.textContent = 'Connect'; btn.disabled = false;
+  });
+  workspaces = {}; allIssues = [];
+  document.getElementById('status').textContent = '';
+  document.getElementById('legend').innerHTML = '';
+  renderWeek();
+}
+
+updateLabel();
+autoConnect();
+</script>
+</body>
+</html>
