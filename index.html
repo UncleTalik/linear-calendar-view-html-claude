@@ -66,6 +66,12 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .day-name { font-size: 10px; color: #aaa; text-transform: uppercase; letter-spacing: 0.04em; }
 .day-num { font-size: 18px; font-weight: 600; color: #111; margin: 2px 0 7px; line-height: 1; }
 .day-num.is-today { color: #4F67E4; }
+.day-count {
+  display: inline-block; font-size: 10px; font-weight: 600;
+  padding: 1px 5px; border-radius: 10px; margin-left: 4px;
+  background: #eee; color: #777; vertical-align: middle; line-height: 1.6;
+}
+.day-count.alert { background: #fde8e8; color: #c0392b; }
 .dash { font-size: 13px; color: #ddd; margin-top: 2px; }
 
 .pill {
@@ -343,9 +349,13 @@ function renderWeek() {
 
     const hdr = document.createElement('div');
     hdr.className = 'day-header-row';
+    const count = dayIssues.length;
+    const countBadge = count > 0
+      ? `<span class="day-count${count > 10 ? ' alert' : ''}">${count}</span>`
+      : '';
     hdr.innerHTML =
       `<div class="day-name">${DAYS[i]}</div>` +
-      `<div class="day-num${isToday ? ' is-today' : ''}">${d.getDate()}</div>`;
+      `<div class="day-num${isToday ? ' is-today' : ''}">${d.getDate()}${countBadge}</div>`;
     col.appendChild(hdr);
 
     if (isEmpty) {
