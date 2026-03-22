@@ -456,10 +456,19 @@ function renderMarkdown(text) {
     s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
     // strikethrough
     s = s.replace(/~~(.+?)~~/g, '<s>$1</s>');
-    // markdown links [text](url) — must run before bare URL auto-linking
-    s = s.replace(/\[([^\]]+)\]\(<?(https?:\/\/[^)>]+)>?\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-    // bare URLs — skip ones already inside href="..."
-    s = s.replace(/(?<!href=")(https?:\/\/[^\s<>"]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+    // markdown links [text](url) or [text](<url>) — use placeholders to prevent
+    // the bare-URL pass from re-linking URLs inside already-processed anchors.
+    // Note: esc() above has already turned < > into &lt; &gt;
+    const links = [];
+    s = s.replace(/\[([^\]]+)\]\((?:&lt;)?(https?:\/\/(?:(?!&gt;)[^)\s])+)(?:&gt;)?\)/g, (_, text, url) => {
+      const idx = links.length;
+      links.push(`<a href="${url}" target="_blank" rel="noopener">${text}</a>`);
+      return `\x00LINK${idx}\x00`;
+    });
+    // bare URLs (placeholders above won't be matched here)
+    s = s.replace(/(https?:\/\/[^\s<>"]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
+    // restore markdown links
+    s = s.replace(/\x00LINK(\d+)\x00/g, (_, i) => links[+i]);
     return s;
   }
 }
