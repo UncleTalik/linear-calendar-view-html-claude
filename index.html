@@ -456,6 +456,22 @@ function renderMarkdown(text) {
     s = esc(s);
     // inline code (before other patterns)
     s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+    // Extract all URLs as placeholders BEFORE bold/italic formatting so that
+    // underscores or asterisks inside URLs are never treated as markdown.
+    // Note: esc() above has already turned < > into &lt; &gt;
+    const links = [];
+    // markdown links [text](url) or [text](<url>)
+    s = s.replace(/\[([^\]]+)\]\((?:&lt;)?(https?:\/\/(?:(?!&gt;)[^)\s])+)(?:&gt;)?\)/g, (_, text, url) => {
+      const idx = links.length;
+      links.push(`<a href="${url}" target="_blank" rel="noopener">${text}</a>`);
+      return `\x00LINK${idx}\x00`;
+    });
+    // bare URLs — replace with placeholders before formatting
+    s = s.replace(/(https?:\/\/[^\s<>"]+)/g, (url) => {
+      const idx = links.length;
+      links.push(`<a href="${url}" target="_blank" rel="noopener">${url}</a>`);
+      return `\x00LINK${idx}\x00`;
+    });
     // bold+italic
     s = s.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
     // bold
@@ -466,18 +482,7 @@ function renderMarkdown(text) {
     s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
     // strikethrough
     s = s.replace(/~~(.+?)~~/g, '<s>$1</s>');
-    // markdown links [text](url) or [text](<url>) — use placeholders to prevent
-    // the bare-URL pass from re-linking URLs inside already-processed anchors.
-    // Note: esc() above has already turned < > into &lt; &gt;
-    const links = [];
-    s = s.replace(/\[([^\]]+)\]\((?:&lt;)?(https?:\/\/(?:(?!&gt;)[^)\s])+)(?:&gt;)?\)/g, (_, text, url) => {
-      const idx = links.length;
-      links.push(`<a href="${url}" target="_blank" rel="noopener">${text}</a>`);
-      return `\x00LINK${idx}\x00`;
-    });
-    // bare URLs (placeholders above won't be matched here)
-    s = s.replace(/(https?:\/\/[^\s<>"]+)/g, '<a href="$1" target="_blank" rel="noopener">$1</a>');
-    // restore markdown links
+    // restore all links
     s = s.replace(/\x00LINK(\d+)\x00/g, (_, i) => links[+i]);
     return s;
   }
