@@ -150,7 +150,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .modal-divider { height: 1px; background: #eee; margin: 0 20px; }
 .modal-link {
   display: inline-block; font-size: 12px; color: #4F67E4; text-decoration: none;
-  margin: 0 20px 16px; padding: 6px 12px; border: 1px solid #4F67E4; border-radius: 6px;
+  padding: 8px 14px; border: 1px solid #4F67E4; border-radius: 8px;
 }
 .modal-link:hover { background: rgba(79,103,228,0.06); }
 
@@ -209,22 +209,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   box-shadow: 0 4px 18px rgba(0,0,0,0.22); overflow: hidden; max-width: 180px;
 }
 
-/* Status change UI */
-.pill-inner { display: flex; align-items: flex-start; gap: 4px; }
-.pill-state-dot {
-  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
-  margin-top: 3px; cursor: pointer; transition: transform 0.1s;
-}
-.pill-state-dot:hover { transform: scale(1.5); }
-.pill-done-btn {
-  background: none; border: none; padding: 0 0 0 2px; margin: 0;
-  cursor: pointer; font-size: 11px; color: #ccc; flex-shrink: 0;
-  line-height: 1.45; opacity: 0; transition: opacity 0.1s, color 0.1s;
-  -webkit-tap-highlight-color: transparent;
-}
-.pill:hover .pill-done-btn { opacity: 1; }
-.pill.done .pill-done-btn { opacity: 1; color: #16a34a; }
-@media (max-width: 639px) { .pill-done-btn { opacity: 0.45; font-size: 13px; } }
 .status-dropdown {
   position: fixed; background: #fff; border: 1px solid #e5e5e3;
   border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);
@@ -246,6 +230,18 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   transition: background 0.1s;
 }
 .modal-status-btn:hover { background: #f0f0ef; }
+.modal-footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 20px 20px; gap: 10px;
+}
+.modal-done-btn {
+  background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; font-weight: 500;
+}
+.modal-done-btn:hover { background: #dcfce7 !important; }
+.modal-done-btn.is-done {
+  background: #f5f5f4; color: #555; border-color: #e0e0de;
+}
+.modal-done-btn.is-done:hover { background: #ebebea !important; }
 </style>
 </head>
 <body>
@@ -326,7 +322,10 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
     <div class="modal-desc" id="modal-desc"></div>
     <div class="modal-divider"></div>
     <div class="modal-meta" id="modal-meta"></div>
-    <a class="modal-link" id="modal-link" href="#" target="_blank" rel="noopener">Open in Linear &rarr;</a>
+    <div class="modal-footer">
+      <button class="modal-done-btn" id="modal-done-btn" onclick="quickMarkDone(currentModalIssue)"></button>
+      <a class="modal-link" id="modal-link" href="#" target="_blank" rel="noopener" style="margin:0">Open in Linear &rarr;</a>
+    </div>
   </div>
 </div>
 
@@ -517,12 +516,8 @@ function renderWeek() {
         pill.style.background = bg;
         const meta = [issue.project?.name, issue.assignee?.displayName].filter(Boolean).join(' · ');
         pill.title = [issue.identifier, issue.title, meta].filter(Boolean).join(' · ');
-        const stateCol = getStateColor(issue);
-        const doneTitle = isDone ? 'Undo (→ In Progress)' : 'Mark as done';
-        pill.innerHTML = `<div class="pill-inner"><span class="pill-state-dot" style="background:${stateCol}" title="${issue.state?.name || ''}"></span><span class="pill-title" style="color:${text}">${issue.title}</span><button class="pill-done-btn" title="${doneTitle}">✓</button></div>`;
+        pill.innerHTML = `<span class="pill-title" style="color:${text}">${issue.title}</span>`;
         pill.onclick = () => openModal(issue);
-        pill.querySelector('.pill-state-dot').addEventListener('click', e => { e.stopPropagation(); openStatusDropdown(issue, e.currentTarget); });
-        pill.querySelector('.pill-done-btn').addEventListener('click', e => { e.stopPropagation(); quickMarkDone(issue); });
         pill._issue = issue;
         if (!hasTouch) {
           pill.draggable = true;
@@ -867,6 +862,7 @@ function openModal(issue) {
   if (issue.url) { link.href = issue.url; link.style.display = ''; }
   else { link.style.display = 'none'; }
 
+  refreshModalDoneBtn();
   document.getElementById('modal-overlay').classList.add('open');
   document.addEventListener('keydown', modalEsc);
 }
@@ -989,6 +985,14 @@ async function saveDueDate() {
   }
 }
 
+function refreshModalDoneBtn() {
+  const btn = document.getElementById('modal-done-btn');
+  if (!btn || !currentModalIssue) return;
+  const done = isIssueCompleted(currentModalIssue);
+  btn.textContent = done ? '↩ Undo Done' : '✓ Mark as Done';
+  btn.classList.toggle('is-done', done);
+}
+
 function updateModalStatus() {
   const dot = document.getElementById('modal-state-dot');
   const val = document.getElementById('modal-state-value');
@@ -996,6 +1000,7 @@ function updateModalStatus() {
   const issue = currentModalIssue;
   dot.style.background = getStateColor(issue);
   val.innerHTML = (issue.state?.name || '—') + ' <span style="font-size:10px;color:#bbb">▾</span>';
+  refreshModalDoneBtn();
 }
 
 function updateModalDueDate(dateStr) {
