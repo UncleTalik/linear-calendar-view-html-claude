@@ -158,6 +158,46 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #eee; }
 .leg-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #555; }
 .leg-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+
+/* Due date edit */
+.due-date-btn { cursor: pointer; border-radius: 4px; padding: 1px 5px; margin: -1px -5px; transition: background 0.1s; display: inline-flex; align-items: center; gap: 4px; }
+.due-date-btn:hover { background: #f0f0ef; }
+.edit-pencil { font-size: 11px; color: #bbb; }
+
+/* Date picker popup */
+.dp-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  z-index: 200; justify-content: center; align-items: center; padding: 16px;
+}
+.dp-overlay.open { display: flex; }
+.dp-card {
+  background: #fff; border-radius: 12px; padding: 16px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.22); width: 252px;
+  animation: modalIn 0.15s ease-out;
+}
+.dp-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.dp-month-label { font-size: 13px; font-weight: 600; color: #111; }
+.dp-nav { background: none; border: none; font-size: 18px; cursor: pointer; color: #555; padding: 2px 8px; border-radius: 6px; line-height: 1; }
+.dp-nav:hover { background: #f0f0ef; }
+.dp-weekdays { display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; margin-bottom: 2px; }
+.dp-weekdays span { font-size: 10px; color: #aaa; font-weight: 600; padding: 2px 0; }
+.dp-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+.dp-cell {
+  aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; border-radius: 6px; cursor: pointer; transition: background 0.1s;
+}
+.dp-cell:hover { background: #f0f0ef; }
+.dp-cell.other-month { color: #ddd; cursor: default; pointer-events: none; }
+.dp-cell.other-month:hover { background: none; }
+.dp-cell.today { background: #EBF0FF; color: #4F67E4; font-weight: 700; }
+.dp-cell.original { background: #FFF3E0; color: #b8770d; font-weight: 600; }
+.dp-cell.selected { background: #4F67E4 !important; color: #fff !important; font-weight: 600; }
+.dp-legend { display: flex; gap: 12px; margin-top: 10px; padding-top: 8px; border-top: 1px solid #f0f0f0; flex-wrap: wrap; }
+.dp-legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #777; }
+.dp-legend-swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+.dp-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
+.dp-save { background: #4F67E4 !important; color: #fff !important; border-color: #4F67E4 !important; font-weight: 500; }
+.dp-save:hover { background: #3d53c8 !important; }
 </style>
 </head>
 <body>
@@ -206,6 +246,28 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   <div class="legend" id="legend"></div>
 </div>
 
+<div class="dp-overlay" id="dp-overlay" onclick="closeDatePicker(event)">
+  <div class="dp-card" onclick="event.stopPropagation()">
+    <div class="dp-header">
+      <button class="dp-nav" onclick="dpShiftMonth(-1)">&#8249;</button>
+      <span class="dp-month-label" id="dp-month-label"></span>
+      <button class="dp-nav" onclick="dpShiftMonth(1)">&#8250;</button>
+    </div>
+    <div class="dp-weekdays">
+      <span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span>
+    </div>
+    <div class="dp-grid" id="dp-grid"></div>
+    <div class="dp-legend">
+      <div class="dp-legend-item"><div class="dp-legend-swatch" style="background:#EBF0FF"></div>Today</div>
+      <div class="dp-legend-item"><div class="dp-legend-swatch" style="background:#FFF3E0"></div>Current due date</div>
+    </div>
+    <div class="dp-footer">
+      <button onclick="closeDatePicker()">Cancel</button>
+      <button id="dp-save-btn" class="dp-save" onclick="saveDueDate()">Save</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
   <div class="modal-card" onclick="event.stopPropagation()">
     <div class="modal-header">
@@ -226,6 +288,8 @@ const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 let weekStart = getSunday(new Date());
 let allIssues = [];
 let workspaces = {};
+let currentModalIssue = null;
+let dpIssue = null, dpSelectedDate = null, dpYear = 0, dpMonth = 0;
 
 function getSunday(d) {
   const m = new Date(d);
@@ -501,6 +565,7 @@ function renderMarkdown(text) {
 }
 
 function openModal(issue) {
+  currentModalIssue = issue;
   document.getElementById('modal-id').textContent = issue.identifier || '';
   document.getElementById('modal-title').textContent = issue.title || '';
   const desc = issue.description || 'No description';
@@ -512,12 +577,15 @@ function openModal(issue) {
     { label: 'Workspace', value: issue._wsName || '—', dot: issue._wsColor },
     { label: 'Project', value: issue.project?.name || '—', dot: issue.project?.color },
     { label: 'Assignee', value: issue.assignee?.displayName || 'Unassigned' },
-    { label: 'Due date', value: issue.dueDate ? new Date(issue.dueDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '—' },
   ];
+  const dueDateFmt = issue.dueDate
+    ? new Date(issue.dueDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+    : '—';
   meta.innerHTML = rows.map(r => {
     const dot = r.dot ? `<div class="modal-status-dot" style="background:${r.dot}"></div>` : '';
     return `<div class="modal-row"><span class="modal-label">${r.label}</span>${dot}<span class="modal-value">${r.value}</span></div>`;
-  }).join('');
+  }).join('') +
+    `<div class="modal-row"><span class="modal-label">Due date</span><span class="modal-value due-date-btn" onclick="openDatePicker()" title="Click to change due date">${dueDateFmt}<span class="edit-pencil">✎</span></span></div>`;
 
   const link = document.getElementById('modal-link');
   if (issue.url) { link.href = issue.url; link.style.display = ''; }
@@ -533,7 +601,120 @@ function closeModal(e) {
   document.removeEventListener('keydown', modalEsc);
 }
 
-function modalEsc(e) { if (e.key === 'Escape') closeModal(); }
+function modalEsc(e) {
+  if (e.key !== 'Escape') return;
+  if (document.getElementById('dp-overlay').classList.contains('open')) {
+    closeDatePicker();
+  } else {
+    closeModal();
+  }
+}
+
+const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+function openDatePicker() {
+  dpIssue = currentModalIssue;
+  dpSelectedDate = dpIssue?.dueDate || null;
+  const start = dpSelectedDate ? new Date(dpSelectedDate + 'T00:00:00') : new Date();
+  dpYear = start.getFullYear();
+  dpMonth = start.getMonth();
+  renderDatePicker();
+  document.getElementById('dp-overlay').classList.add('open');
+}
+
+function renderDatePicker() {
+  const todayStr = isoDate(new Date());
+  const originalStr = dpIssue?.dueDate || null;
+  document.getElementById('dp-month-label').textContent = MONTH_NAMES[dpMonth] + ' ' + dpYear;
+
+  const grid = document.getElementById('dp-grid');
+  grid.innerHTML = '';
+
+  const firstDow = new Date(dpYear, dpMonth, 1).getDay();
+  const daysInMonth = new Date(dpYear, dpMonth + 1, 0).getDate();
+  const daysInPrev = new Date(dpYear, dpMonth, 0).getDate();
+
+  // Leading days from previous month (not clickable)
+  for (let i = 0; i < firstDow; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'dp-cell other-month';
+    cell.textContent = daysInPrev - firstDow + 1 + i;
+    grid.appendChild(cell);
+  }
+
+  // Days of current month
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = isoDate(new Date(dpYear, dpMonth, d));
+    const cell = document.createElement('div');
+    const cls = ['dp-cell'];
+    if (dateStr === dpSelectedDate) cls.push('selected');
+    else if (dateStr === todayStr) cls.push('today');
+    else if (originalStr && dateStr === originalStr) cls.push('original');
+    cell.className = cls.join(' ');
+    cell.textContent = d;
+    cell.onclick = () => { dpSelectedDate = dateStr; renderDatePicker(); };
+    grid.appendChild(cell);
+  }
+
+  // Trailing days from next month (not clickable)
+  const trailing = (7 - ((firstDow + daysInMonth) % 7)) % 7;
+  for (let i = 1; i <= trailing; i++) {
+    const cell = document.createElement('div');
+    cell.className = 'dp-cell other-month';
+    cell.textContent = i;
+    grid.appendChild(cell);
+  }
+
+  document.getElementById('dp-save-btn').disabled = !dpSelectedDate;
+}
+
+function dpShiftMonth(n) {
+  dpMonth += n;
+  if (dpMonth < 0) { dpMonth = 11; dpYear--; }
+  else if (dpMonth > 11) { dpMonth = 0; dpYear++; }
+  renderDatePicker();
+}
+
+function closeDatePicker(e) {
+  if (e && e.target !== document.getElementById('dp-overlay')) return;
+  document.getElementById('dp-overlay').classList.remove('open');
+}
+
+async function saveDueDate() {
+  if (!dpIssue || !dpSelectedDate) return;
+  const saveBtn = document.getElementById('dp-save-btn');
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving…';
+  const ws = Object.values(workspaces)[dpIssue._wsIndex];
+  if (!ws) {
+    document.getElementById('err').textContent = 'Cannot find workspace token';
+    saveBtn.textContent = 'Save'; saveBtn.disabled = false;
+    return;
+  }
+  try {
+    const data = await linearGQL(ws.token,
+      `mutation { issueUpdate(id: "${dpIssue.id}", input: { dueDate: "${dpSelectedDate}" }) { success issue { id dueDate } } }`
+    );
+    if (!data.issueUpdate.success) throw new Error('Update returned success=false');
+    // Update local state immediately (no need to re-fetch)
+    const idx = allIssues.findIndex(i => i.id === dpIssue.id);
+    if (idx !== -1) allIssues[idx].dueDate = dpSelectedDate;
+    dpIssue.dueDate = dpSelectedDate;
+    document.getElementById('dp-overlay').classList.remove('open');
+    renderWeek();
+    updateModalDueDate(dpSelectedDate);
+  } catch(err) {
+    document.getElementById('err').textContent = 'Failed to update due date: ' + err.message;
+    saveBtn.textContent = 'Save'; saveBtn.disabled = false;
+  }
+}
+
+function updateModalDueDate(dateStr) {
+  const btn = document.querySelector('#modal-meta .due-date-btn');
+  if (!btn) return;
+  const fmt = new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  btn.innerHTML = fmt + '<span class="edit-pencil">✎</span>';
+}
 
 function toggleSetup() {
   document.getElementById('setup-header').classList.toggle('open');
