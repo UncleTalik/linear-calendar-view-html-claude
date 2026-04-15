@@ -89,14 +89,23 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   .grid { grid-template-columns: 1fr; gap: 8px; }
   .day { min-height: unset; padding: 12px 14px; display: flex; flex-direction: column; }
   .day.empty { opacity: 0.4; }
-  .day-header-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+  .day-header-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; cursor: pointer; -webkit-user-select: none; user-select: none; }
   .day-name { font-size: 12px; }
   .day-num { font-size: 22px; margin: 0; }
   .pill { font-size: 13px; padding: 6px 10px; margin-bottom: 6px; }
+  .day-toggle {
+    margin-left: auto; color: #bbb; font-size: 18px; line-height: 1;
+    display: inline-block; transition: transform 0.18s;
+    transform: rotate(90deg); /* expanded: ▾ */
+  }
+  .day.collapsed .day-toggle { transform: rotate(0deg); /* collapsed: › */ }
+  .day.collapsed .day-pills { display: none; }
+  .day.collapsed .day-header-row { margin-bottom: 0; }
 }
 @media (min-width: 640px) {
   .day-header-row { display: block; }
   .day.empty { opacity: 1; }
+  .day-toggle { display: none; }
 }
 
 .modal-overlay {
@@ -464,9 +473,12 @@ function renderWeek() {
         return aDone - bDone;
       });
     const isEmpty = dayIssues.length === 0;
+    const count = dayIssues.length;
+    const nonDoneCount = isMobile ? dayIssues.filter(i => !isIssueCompleted(i)).length : 0;
+    const shouldCollapse = isMobile && ds < todayStr && count > 0 && nonDoneCount === 0;
 
     const col = document.createElement('div');
-    col.className = 'day' + (isToday ? ' today' : '') + (isEmpty && isMobile ? ' empty' : '');
+    col.className = 'day' + (isToday ? ' today' : '') + (isEmpty && isMobile ? ' empty' : '') + (shouldCollapse ? ' collapsed' : '');
     col.dataset.date = ds;
     col.addEventListener('dragover', e => {
       if (!dragIssue) return;
@@ -484,24 +496,36 @@ function renderWeek() {
 
     const hdr = document.createElement('div');
     hdr.className = 'day-header-row';
-    const count = dayIssues.length;
+    const countText = isMobile && nonDoneCount > 0 && nonDoneCount < count
+      ? `${count} (${nonDoneCount})` : `${count}`;
     const countBadge = count > 0
-      ? `<span class="day-count${count > 10 ? ' alert' : ''}">${count}</span>`
+      ? `<span class="day-count${count > 10 ? ' alert' : ''}">${countText}</span>`
       : '';
     hdr.innerHTML =
       `<div class="day-name">${DAYS[i]}</div>` +
-      `<div class="day-num${isToday ? ' is-today' : ''}">${d.getDate()}${countBadge}</div>`;
+      `<div class="day-num${isToday ? ' is-today' : ''}">${d.getDate()}${countBadge}</div>` +
+      (isMobile ? `<span class="day-toggle">›</span>` : '');
+    if (isMobile) hdr.addEventListener('click', () => col.classList.toggle('collapsed'));
     col.appendChild(hdr);
 
+    let pillsTarget = col;
+    if (isMobile) {
+      const pw = document.createElement('div');
+      pw.className = 'day-pills';
+      col.appendChild(pw);
+      pillsTarget = pw;
+    }
     if (isEmpty) {
-      col.innerHTML += `<div class="dash">—</div>`;
+      const dash = document.createElement('div');
+      dash.className = 'dash'; dash.textContent = '—';
+      pillsTarget.appendChild(dash);
     } else {
       let lastWsIndex = null;
       dayIssues.forEach(issue => {
         if (lastWsIndex !== null && issue._wsIndex !== lastWsIndex) {
           const sep = document.createElement('div');
           sep.className = 'ws-separator';
-          col.appendChild(sep);
+          pillsTarget.appendChild(sep);
         }
         lastWsIndex = issue._wsIndex;
         const color = issue.project?.color || issue._wsColor;
@@ -534,7 +558,7 @@ function renderWeek() {
           pill.addEventListener('touchend', onPillTouchEnd);
           pill.addEventListener('touchcancel', onPillTouchEnd);
         }
-        col.appendChild(pill);
+        pillsTarget.appendChild(pill);
         if (issue.project) seenProjects[issue.project.id] = issue.project;
       });
     }
