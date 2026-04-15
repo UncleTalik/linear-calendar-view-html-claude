@@ -96,9 +96,9 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   .day-toggle {
     margin-left: auto; color: #bbb; font-size: 18px; line-height: 1;
     display: inline-block; transition: transform 0.18s;
-    transform: rotate(90deg); /* expanded: ▾ */
+    transform: rotate(90deg);
   }
-  .day.collapsed .day-toggle { transform: rotate(0deg); /* collapsed: › */ }
+  .day.collapsed .day-toggle { transform: rotate(0deg); }
   .day.collapsed .day-pills { display: none; }
   .day.collapsed .day-header-row { margin-bottom: 0; }
 }
@@ -472,13 +472,12 @@ function renderWeek() {
         const bDone = isIssueCompleted(b);
         return aDone - bDone;
       });
-    const isEmpty = dayIssues.length === 0;
     const count = dayIssues.length;
     const nonDoneCount = isMobile ? dayIssues.filter(i => !isIssueCompleted(i)).length : 0;
     const shouldCollapse = isMobile && ds < todayStr && count > 0 && nonDoneCount === 0;
 
     const col = document.createElement('div');
-    col.className = 'day' + (isToday ? ' today' : '') + (isEmpty && isMobile ? ' empty' : '') + (shouldCollapse ? ' collapsed' : '');
+    col.className = 'day' + (isToday ? ' today' : '') + (count === 0 && isMobile ? ' empty' : '') + (shouldCollapse ? ' collapsed' : '');
     col.dataset.date = ds;
     col.addEventListener('dragover', e => {
       if (!dragIssue) return;
@@ -504,18 +503,18 @@ function renderWeek() {
     hdr.innerHTML =
       `<div class="day-name">${DAYS[i]}</div>` +
       `<div class="day-num${isToday ? ' is-today' : ''}">${d.getDate()}${countBadge}</div>` +
-      (isMobile ? `<span class="day-toggle">›</span>` : '');
-    if (isMobile) hdr.addEventListener('click', () => col.classList.toggle('collapsed'));
+      (isMobile && count > 0 ? `<span class="day-toggle">›</span>` : '');
+    if (isMobile && count > 0) hdr.addEventListener('click', () => col.classList.toggle('collapsed'));
     col.appendChild(hdr);
 
     let pillsTarget = col;
-    if (isMobile) {
+    if (isMobile && count > 0) {
       const pw = document.createElement('div');
       pw.className = 'day-pills';
       col.appendChild(pw);
       pillsTarget = pw;
     }
-    if (isEmpty) {
+    if (count === 0) {
       const dash = document.createElement('div');
       dash.className = 'dash'; dash.textContent = '—';
       pillsTarget.appendChild(dash);
