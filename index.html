@@ -340,6 +340,9 @@ function renderWeek() {
       .filter(is => is.dueDate && is.dueDate.startsWith(ds))
       .sort((a, b) => {
         if (a._wsIndex !== b._wsIndex) return a._wsIndex - b._wsIndex;
+        const aProj = a.project?.name || '';
+        const bProj = b.project?.name || '';
+        if (aProj !== bProj) return aProj.localeCompare(bProj);
         const aDone = a.state?.type === 'completed' || a.state?.type === 'cancelled';
         const bDone = b.state?.type === 'completed' || b.state?.type === 'cancelled';
         return aDone - bDone;
