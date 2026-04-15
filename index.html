@@ -238,10 +238,6 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
   background: #f0fdf4; color: #16a34a; border-color: #bbf7d0; font-weight: 500;
 }
 .modal-done-btn:hover { background: #dcfce7 !important; }
-.modal-done-btn.is-done {
-  background: #f5f5f4; color: #555; border-color: #e0e0de;
-}
-.modal-done-btn.is-done:hover { background: #ebebea !important; }
 </style>
 </head>
 <body>
@@ -620,11 +616,7 @@ async function applyStatusChange(issue, stateId) {
 function quickMarkDone(issue) {
   const ws = getWorkspace(issue);
   if (!ws?.states?.length) return;
-  const isDone = isIssueCompleted(issue);
-  const teamStates = getTeamStates(issue);
-  const target = isDone
-    ? (teamStates.find(s => s.type === 'started') || teamStates.find(s => s.type === 'unstarted'))
-    : teamStates.find(s => s.type === 'completed');
+  const target = getTeamStates(issue).find(s => s.type === 'completed');
   if (target) applyStatusChange(issue, target.id);
 }
 
@@ -989,8 +981,8 @@ function refreshModalDoneBtn() {
   const btn = document.getElementById('modal-done-btn');
   if (!btn || !currentModalIssue) return;
   const done = isIssueCompleted(currentModalIssue);
-  btn.textContent = done ? '↩ Undo Done' : '✓ Mark as Done';
-  btn.classList.toggle('is-done', done);
+  btn.textContent = '✓ Mark as Done';
+  btn.disabled = done;
 }
 
 function updateModalStatus() {
