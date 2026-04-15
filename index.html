@@ -705,7 +705,9 @@ async function saveDueDate() {
     updateModalDueDate(dpSelectedDate);
   } catch(err) {
     document.getElementById('err').textContent = 'Failed to update due date: ' + err.message;
-    saveBtn.textContent = 'Save'; saveBtn.disabled = false;
+  } finally {
+    saveBtn.textContent = 'Save';
+    saveBtn.disabled = !dpSelectedDate;
   }
 }
 
