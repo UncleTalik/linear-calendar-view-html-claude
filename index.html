@@ -198,6 +198,16 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .dp-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid #eee; }
 .dp-save { background: #4F67E4 !important; color: #fff !important; border-color: #4F67E4 !important; font-weight: 500; }
 .dp-save:hover { background: #3d53c8 !important; }
+
+/* Drag and drop */
+.pill.dragging { opacity: 0.3; }
+.day.drag-over { border-color: #4F67E4; background: rgba(79,103,228,0.05); opacity: 1; }
+.drag-ghost {
+  position: fixed; pointer-events: none; z-index: 300;
+  opacity: 0.88; transform: rotate(2deg) scale(1.04);
+  border-radius: 5px; padding: 4px 7px; font-size: 11px; line-height: 1.45;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.22); overflow: hidden; max-width: 180px;
+}
 </style>
 </head>
 <body>
@@ -290,6 +300,10 @@ let allIssues = [];
 let workspaces = {};
 let currentModalIssue = null;
 let dpIssue = null, dpSelectedDate = null, dpYear = 0, dpMonth = 0;
+let dragIssue = null;
+let touchIssue = null, touchStartX = 0, touchStartY = 0;
+let touchDragging = false, touchGhost = null, touchDragOver = null, touchTimer = null;
+const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
 function getSunday(d) {
   const m = new Date(d);
@@ -415,6 +429,20 @@ function renderWeek() {
 
     const col = document.createElement('div');
     col.className = 'day' + (isToday ? ' today' : '') + (isEmpty && isMobile ? ' empty' : '');
+    col.dataset.date = ds;
+    col.addEventListener('dragover', e => {
+      if (!dragIssue) return;
+      e.preventDefault();
+      document.querySelectorAll('.day.drag-over').forEach(d => d.classList.remove('drag-over'));
+      col.classList.add('drag-over');
+    });
+    col.addEventListener('drop', e => {
+      e.preventDefault();
+      document.querySelectorAll('.day.drag-over').forEach(d => d.classList.remove('drag-over'));
+      if (dragIssue && (dragIssue.dueDate || '').slice(0, 10) !== ds) {
+        applyDueDateChange(dragIssue, ds);
+      }
+    });
 
     const hdr = document.createElement('div');
     hdr.className = 'day-header-row';
@@ -448,6 +476,26 @@ function renderWeek() {
         pill.title = [issue.identifier, issue.title, meta].filter(Boolean).join(' · ');
         pill.innerHTML = `<span class="pill-title" style="color:${text}">${issue.title}</span>`;
         pill.onclick = () => openModal(issue);
+        pill._issue = issue;
+        if (!hasTouch) {
+          pill.draggable = true;
+          pill.addEventListener('dragstart', e => {
+            dragIssue = issue;
+            pill.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', issue.id);
+          });
+          pill.addEventListener('dragend', () => {
+            dragIssue = null;
+            pill.classList.remove('dragging');
+            document.querySelectorAll('.day.drag-over').forEach(d => d.classList.remove('drag-over'));
+          });
+        } else {
+          pill.addEventListener('touchstart', onPillTouchStart, { passive: true });
+          pill.addEventListener('touchmove', onPillTouchMove, { passive: false });
+          pill.addEventListener('touchend', onPillTouchEnd);
+          pill.addEventListener('touchcancel', onPillTouchEnd);
+        }
         col.appendChild(pill);
         if (issue.project) seenProjects[issue.project.id] = issue.project;
       });
@@ -463,6 +511,96 @@ function renderWeek() {
   Object.values(workspaces).forEach(ws => {
     legend.innerHTML += `<div class="leg-item"><div class="leg-swatch" style="background:${ws.color};border-radius:50%"></div><span>${ws.orgName}</span></div>`;
   });
+}
+
+async function applyDueDateChange(issue, newDate) {
+  const ws = Object.values(workspaces)[issue._wsIndex];
+  if (!ws) { document.getElementById('err').textContent = 'Cannot find workspace token'; return; }
+  const oldDate = issue.dueDate;
+  // Optimistic update: move pill immediately, revert on failure
+  issue.dueDate = newDate;
+  renderWeek();
+  try {
+    const data = await linearGQL(ws.token,
+      `mutation { issueUpdate(id: "${issue.id}", input: { dueDate: "${newDate}" }) { success } }`
+    );
+    if (!data.issueUpdate.success) throw new Error('Update returned success=false');
+  } catch(err) {
+    issue.dueDate = oldDate;
+    renderWeek();
+    document.getElementById('err').textContent = 'Failed to update due date: ' + err.message;
+  }
+}
+
+function onPillTouchStart(e) {
+  const pill = e.currentTarget;
+  touchIssue = pill._issue;
+  touchStartX = e.touches[0].clientX;
+  touchStartY = e.touches[0].clientY;
+  touchDragging = false;
+  // Long-press (400ms) activates drag mode
+  touchTimer = setTimeout(() => {
+    touchDragging = true;
+    if (navigator.vibrate) navigator.vibrate(50);
+    pill.classList.add('dragging');
+    touchGhost = document.createElement('div');
+    touchGhost.className = 'drag-ghost';
+    touchGhost.style.background = pill.style.background;
+    touchGhost.style.width = Math.min(pill.offsetWidth, 180) + 'px';
+    touchGhost.innerHTML = pill.innerHTML;
+    document.body.appendChild(touchGhost);
+    touchGhost.style.left = (touchStartX - touchGhost.offsetWidth / 2) + 'px';
+    touchGhost.style.top  = (touchStartY - 24) + 'px';
+  }, 400);
+}
+
+function onPillTouchMove(e) {
+  if (!touchIssue) return;
+  const dx = e.touches[0].clientX - touchStartX;
+  const dy = e.touches[0].clientY - touchStartY;
+  if (!touchDragging) {
+    // Cancel long-press if finger moves more than 10px (it's a scroll)
+    if (Math.sqrt(dx * dx + dy * dy) > 10) {
+      clearTimeout(touchTimer); touchTimer = null; touchIssue = null;
+    }
+    return;
+  }
+  e.preventDefault(); // stop page scroll while dragging
+  const x = e.touches[0].clientX, y = e.touches[0].clientY;
+  if (touchGhost) {
+    touchGhost.style.left = (x - touchGhost.offsetWidth / 2) + 'px';
+    touchGhost.style.top  = (y - 24) + 'px';
+  }
+  // Find the day column under the finger
+  if (touchGhost) touchGhost.style.visibility = 'hidden';
+  const target = document.elementFromPoint(x, y);
+  if (touchGhost) touchGhost.style.visibility = '';
+  const dayEl = target?.closest('.day[data-date]');
+  if (dayEl !== touchDragOver) {
+    if (touchDragOver) touchDragOver.classList.remove('drag-over');
+    touchDragOver = dayEl || null;
+    if (touchDragOver) touchDragOver.classList.add('drag-over');
+  }
+}
+
+function onPillTouchEnd(e) {
+  if (touchTimer) { clearTimeout(touchTimer); touchTimer = null; }
+  const pill = e.currentTarget;
+  pill.classList.remove('dragging');
+  if (touchDragging) {
+    e.preventDefault(); // suppress synthetic click after drag
+    if (touchGhost) { touchGhost.remove(); touchGhost = null; }
+    if (touchDragOver) {
+      touchDragOver.classList.remove('drag-over');
+      const targetDate = touchDragOver.dataset.date;
+      if (touchIssue && targetDate && targetDate !== (touchIssue.dueDate || '').slice(0, 10)) {
+        applyDueDateChange(touchIssue, targetDate);
+      }
+      touchDragOver = null;
+    }
+  }
+  touchIssue = null;
+  touchDragging = false;
 }
 
 function updateLabel() {
