@@ -154,6 +154,7 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 }
 .modal-link:hover { background: rgba(79,103,228,0.06); }
 
+.ws-separator { height: 1px; background: #e8e8e6; margin: 5px 0; }
 .legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; padding-top: 12px; border-top: 1px solid #eee; }
 .leg-item { display: flex; align-items: center; gap: 5px; font-size: 12px; color: #555; }
 .leg-swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
@@ -293,10 +294,10 @@ async function fetchAndRender() {
     }
   }`;
 
-  for (const ws of wsList) {
+  for (const [idx, ws] of wsList.entries()) {
     try {
       const data = await linearGQL(ws.token, q);
-      data.issues.nodes.forEach(i => { i._wsColor = ws.color; i._wsName = ws.orgName; });
+      data.issues.nodes.forEach(i => { i._wsColor = ws.color; i._wsName = ws.orgName; i._wsIndex = idx; });
       allIssues.push(...data.issues.nodes);
     } catch(e) {
       document.getElementById('err').textContent = ws.orgName + ': ' + e.message;
@@ -338,6 +339,10 @@ function renderWeek() {
     const dayIssues = allIssues
       .filter(is => is.dueDate && is.dueDate.startsWith(ds))
       .sort((a, b) => {
+        if (a._wsIndex !== b._wsIndex) return a._wsIndex - b._wsIndex;
+        const aProj = a.project?.name || '';
+        const bProj = b.project?.name || '';
+        if (aProj !== bProj) return aProj.localeCompare(bProj);
         const aDone = a.state?.type === 'completed' || a.state?.type === 'cancelled';
         const bDone = b.state?.type === 'completed' || b.state?.type === 'cancelled';
         return aDone - bDone;
@@ -361,7 +366,14 @@ function renderWeek() {
     if (isEmpty) {
       col.innerHTML += `<div class="dash">—</div>`;
     } else {
+      let lastWsIndex = null;
       dayIssues.forEach(issue => {
+        if (lastWsIndex !== null && issue._wsIndex !== lastWsIndex) {
+          const sep = document.createElement('div');
+          sep.className = 'ws-separator';
+          col.appendChild(sep);
+        }
+        lastWsIndex = issue._wsIndex;
         const color = issue.project?.color || issue._wsColor;
         const { bg, text } = pillStyle(color);
         const pill = document.createElement('div');
