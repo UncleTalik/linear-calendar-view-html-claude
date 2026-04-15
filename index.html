@@ -378,12 +378,11 @@ async function connect(n) {
   btn.textContent = '…'; btn.disabled = true;
   document.getElementById('err').textContent = '';
   try {
-    const data = await linearGQL(token, `{ viewer { name } organization { name } }`);
-    workspaces[n] = { token, orgName: data.organization.name, color: WS_COLORS[n - 1], states: [] };
-    try {
-      const sd = await linearGQL(token, `{ workflowStates(first: 250) { nodes { id name type color team { id } } } }`);
-      workspaces[n].states = sd.workflowStates.nodes;
-    } catch(_) {}
+    const [data, sd] = await Promise.all([
+      linearGQL(token, `{ viewer { name } organization { name } }`),
+      linearGQL(token, `{ workflowStates(first: 250) { nodes { id name type color team { id } } } }`).catch(() => null),
+    ]);
+    workspaces[n] = { token, orgName: data.organization.name, color: WS_COLORS[n - 1], states: sd?.workflowStates?.nodes || [] };
     localStorage.setItem('linear_token_' + n, token);
     document.getElementById('ws' + n + '-dot').style.background = WS_COLORS[n - 1];
     document.getElementById('ws' + n + '-name').textContent = data.organization.name + ' · ' + data.viewer.name;
@@ -465,8 +464,8 @@ function renderWeek() {
         const aProj = a.project?.name || '';
         const bProj = b.project?.name || '';
         if (aProj !== bProj) return aProj.localeCompare(bProj);
-        const aDone = a.state?.type === 'completed' || a.state?.type === 'cancelled';
-        const bDone = b.state?.type === 'completed' || b.state?.type === 'cancelled';
+        const aDone = isIssueCompleted(a);
+        const bDone = isIssueCompleted(b);
         return aDone - bDone;
       });
     const isEmpty = dayIssues.length === 0;
@@ -513,12 +512,12 @@ function renderWeek() {
         const color = issue.project?.color || issue._wsColor;
         const { bg, text } = pillStyle(color);
         const pill = document.createElement('div');
-        const isDone = issue.state?.type === 'completed' || issue.state?.type === 'cancelled';
+        const isDone = isIssueCompleted(issue);
         pill.className = 'pill' + (isDone ? ' done' : '');
         pill.style.background = bg;
         const meta = [issue.project?.name, issue.assignee?.displayName].filter(Boolean).join(' · ');
         pill.title = [issue.identifier, issue.title, meta].filter(Boolean).join(' · ');
-        const stateCol = issue.state?.color || stateTypeDefaultColor(issue.state?.type);
+        const stateCol = getStateColor(issue);
         const doneTitle = isDone ? 'Undo (→ In Progress)' : 'Mark as done';
         pill.innerHTML = `<div class="pill-inner"><span class="pill-state-dot" style="background:${stateCol}" title="${issue.state?.name || ''}"></span><span class="pill-title" style="color:${text}">${issue.title}</span><button class="pill-done-btn" title="${doneTitle}">✓</button></div>`;
         pill.onclick = () => openModal(issue);
@@ -583,16 +582,25 @@ async function applyDueDateChange(issue, newDate) {
 function stateTypeDefaultColor(type) {
   return { triage:'#95A2B3', backlog:'#95A2B3', unstarted:'#E2E8F0', started:'#F59E0B', completed:'#10B981', cancelled:'#94A3B8' }[type] || '#95A2B3';
 }
+function isIssueCompleted(issue) {
+  return issue.state?.type === 'completed' || issue.state?.type === 'cancelled';
+}
+function getStateColor(issue) {
+  return issue.state?.color || stateTypeDefaultColor(issue.state?.type);
+}
+function getWorkspace(issue) {
+  return Object.values(workspaces)[issue._wsIndex];
+}
 
 function getTeamStates(issue) {
-  const ws = Object.values(workspaces)[issue._wsIndex];
+  const ws = getWorkspace(issue);
   if (!ws?.states?.length) return [];
   const teamId = issue.team?.id;
   return teamId ? ws.states.filter(s => s.team?.id === teamId) : ws.states;
 }
 
 async function applyStatusChange(issue, stateId) {
-  const ws = Object.values(workspaces)[issue._wsIndex];
+  const ws = getWorkspace(issue);
   if (!ws) { document.getElementById('err').textContent = 'Cannot find workspace token'; return; }
   const newState = ws.states?.find(s => s.id === stateId);
   if (!newState) return;
@@ -615,9 +623,9 @@ async function applyStatusChange(issue, stateId) {
 }
 
 function quickMarkDone(issue) {
-  const ws = Object.values(workspaces)[issue._wsIndex];
+  const ws = getWorkspace(issue);
   if (!ws?.states?.length) return;
-  const isDone = issue.state?.type === 'completed' || issue.state?.type === 'cancelled';
+  const isDone = isIssueCompleted(issue);
   const teamStates = getTeamStates(issue);
   const target = isDone
     ? (teamStates.find(s => s.type === 'started') || teamStates.find(s => s.type === 'unstarted'))
@@ -640,17 +648,17 @@ function openStatusDropdown(issue, anchorEl) {
     item.addEventListener('click', e => { e.stopPropagation(); applyStatusChange(issue, state.id); });
     dropdown.appendChild(item);
   });
-  document.body.appendChild(dropdown);
   const rect = anchorEl.getBoundingClientRect();
   const dpW = 170;
-  const dpH = dropdown.offsetHeight || teamStates.length * 34 + 8;
+  const dpH = teamStates.length * 34 + 8;
   let left = rect.left;
   let top = rect.bottom + 4;
   if (left + dpW > window.innerWidth - 8) left = window.innerWidth - dpW - 8;
   if (top + dpH > window.innerHeight - 8) top = rect.top - dpH - 4;
   dropdown.style.left = Math.max(8, left) + 'px';
   dropdown.style.top = Math.max(8, top) + 'px';
-  setTimeout(() => document.addEventListener('click', closeStatusDropdown, { once: true }), 0);
+  document.body.appendChild(dropdown);
+  setTimeout(() => { if (statusDropdownEl) document.addEventListener('click', closeStatusDropdown, { once: true }); }, 0);
 }
 
 function closeStatusDropdown() {
@@ -835,7 +843,7 @@ function openModal(issue) {
   document.getElementById('modal-desc').innerHTML = renderMarkdown(desc);
 
   const meta = document.getElementById('modal-meta');
-  const stateCol = issue.state?.color || stateTypeDefaultColor(issue.state?.type);
+  const stateCol = getStateColor(issue);
   const otherRows = [
     { label: 'Workspace', value: issue._wsName || '—', dot: issue._wsColor },
     { label: 'Project', value: issue.project?.name || '—', dot: issue.project?.color },
@@ -986,8 +994,7 @@ function updateModalStatus() {
   const val = document.getElementById('modal-state-value');
   if (!dot || !val || !currentModalIssue) return;
   const issue = currentModalIssue;
-  const stateCol = issue.state?.color || stateTypeDefaultColor(issue.state?.type);
-  dot.style.background = stateCol;
+  dot.style.background = getStateColor(issue);
   val.innerHTML = (issue.state?.name || '—') + ' <span style="font-size:10px;color:#bbb">▾</span>';
 }
 
