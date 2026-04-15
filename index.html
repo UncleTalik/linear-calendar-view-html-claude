@@ -464,13 +464,13 @@ function renderWeek() {
     const dayIssues = allIssues
       .filter(is => is.dueDate && is.dueDate.startsWith(ds))
       .sort((a, b) => {
+        const aDone = isIssueCompleted(a);
+        const bDone = isIssueCompleted(b);
+        if (aDone !== bDone) return aDone - bDone;
         if (a._wsIndex !== b._wsIndex) return a._wsIndex - b._wsIndex;
         const aProj = a.project?.name || '';
         const bProj = b.project?.name || '';
-        if (aProj !== bProj) return aProj.localeCompare(bProj);
-        const aDone = isIssueCompleted(a);
-        const bDone = isIssueCompleted(b);
-        return aDone - bDone;
+        return aProj.localeCompare(bProj);
       });
     const count = dayIssues.length;
     const nonDoneCount = isMobile ? dayIssues.filter(i => !isIssueCompleted(i)).length : 0;
@@ -520,17 +520,23 @@ function renderWeek() {
       pillsTarget.appendChild(dash);
     } else {
       let lastWsIndex = null;
+      let lastDone = false;
       dayIssues.forEach(issue => {
-        if (lastWsIndex !== null && issue._wsIndex !== lastWsIndex) {
-          const sep = document.createElement('div');
-          sep.className = 'ws-separator';
-          pillsTarget.appendChild(sep);
+        const isDone = isIssueCompleted(issue);
+        if (lastWsIndex !== null) {
+          const wsChanged = issue._wsIndex !== lastWsIndex;
+          // separator before done group, or between workspaces within non-done group
+          if ((isDone && !lastDone) || (wsChanged && !isDone)) {
+            const sep = document.createElement('div');
+            sep.className = 'ws-separator';
+            pillsTarget.appendChild(sep);
+          }
         }
         lastWsIndex = issue._wsIndex;
+        lastDone = isDone;
         const color = issue.project?.color || issue._wsColor;
         const { bg, text } = pillStyle(color);
         const pill = document.createElement('div');
-        const isDone = isIssueCompleted(issue);
         pill.className = 'pill' + (isDone ? ' done' : '');
         pill.style.background = bg;
         const meta = [issue.project?.name, issue.assignee?.displayName].filter(Boolean).join(' · ');
