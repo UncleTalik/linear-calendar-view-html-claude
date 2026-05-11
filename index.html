@@ -84,6 +84,8 @@ button:disabled { opacity: 0.45; cursor: not-allowed; }
 .pill-title { display: block; font-weight: 500; word-break: break-word; overflow-wrap: break-word; white-space: normal; }
 .pill.done { opacity: 0.5; }
 .pill.done .pill-title { text-decoration: line-through; font-weight: 400; }
+.pill-recurring { display: inline-block; margin-right: 3px; font-size: 10px; opacity: 0.85; vertical-align: baseline; }
+.modal-recurring-icon { font-size: 13px; color: #4F67E4; flex-shrink: 0; }
 
 /* Mobile: single column stacked */
 @media (max-width: 639px) {
@@ -416,6 +418,7 @@ async function fetchAndRender() {
         state { id name type color }
         team { id }
         assignee { displayName }
+        recurringIssueTemplate { id name templateData }
       }
     }
   }`;
@@ -541,8 +544,10 @@ function renderWeek() {
         pill.className = 'pill' + (isDone ? ' done' : '');
         pill.style.background = bg;
         const meta = [issue.project?.name, issue.assignee?.displayName].filter(Boolean).join(' · ');
-        pill.title = [issue.identifier, issue.title, meta].filter(Boolean).join(' · ');
-        pill.innerHTML = `<span class="pill-title" style="color:${text}">${issue.title}</span>`;
+        const isRecurring = !!issue.recurringIssueTemplate;
+        pill.title = [issue.identifier, issue.title, meta, isRecurring ? 'Recurring' : ''].filter(Boolean).join(' · ');
+        const recurringMark = isRecurring ? `<span class="pill-recurring" title="Recurring">↻</span>` : '';
+        pill.innerHTML = `<span class="pill-title" style="color:${text}">${recurringMark}${issue.title}</span>`;
         pill.onclick = () => openModal(issue);
         pill._issue = issue;
         if (!hasTouch) {
@@ -611,6 +616,40 @@ function getStateColor(issue) {
 }
 function getWorkspace(issue) {
   return Object.values(workspaces)[issue._wsIndex];
+}
+
+function formatRecurrence(template) {
+  if (!template) return null;
+  let data = template.templateData;
+  if (typeof data === 'string') {
+    try { data = JSON.parse(data); } catch { data = null; }
+  }
+  let schedule = data?.schedule;
+  if (typeof schedule === 'string') {
+    try { schedule = JSON.parse(schedule); } catch { /* leave as-is */ }
+  }
+  const entries = Array.isArray(schedule) ? schedule : (schedule ? [schedule] : []);
+  let rule = '';
+  if (entries.length) {
+    const e = entries[0] || {};
+    const raw = (e.frequency || e.freq || e.type || e.unit || e.cadence || '').toString().toLowerCase();
+    const interval = e.interval || e.every || e.repeat || 1;
+    const noun = { daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year',
+                   day: 'day', week: 'week', month: 'month', year: 'year' }[raw] || raw;
+    if (noun) {
+      rule = interval > 1 ? `Every ${interval} ${noun}s` : `Every ${noun}`;
+      const days = e.byDay || e.byday || e.days || e.daysOfWeek;
+      if (days) {
+        const dayStr = Array.isArray(days) ? days.join(', ') : String(days);
+        if (dayStr) rule += ` on ${dayStr}`;
+      }
+    }
+  }
+  return { name: template.name || 'Recurring', rule };
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
 function getTeamStates(issue) {
@@ -869,12 +908,17 @@ function openModal(issue) {
   const dueDateFmt = issue.dueDate
     ? new Date(issue.dueDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
     : '—';
+  const rec = formatRecurrence(issue.recurringIssueTemplate);
+  const recRow = rec
+    ? `<div class="modal-row"><span class="modal-label">Recurrence</span><span class="modal-recurring-icon" title="Recurring">↻</span><span class="modal-value">${escapeHtml(rec.name)}${rec.rule ? ' · ' + escapeHtml(rec.rule) : ''}</span></div>`
+    : '';
   meta.innerHTML =
     `<div class="modal-row" id="modal-status-row"><span class="modal-label">Status</span><div class="modal-status-dot" id="modal-state-dot" style="background:${stateCol}"></div><span class="modal-value modal-status-btn" id="modal-state-value" title="Click to change status">${issue.state?.name || '—'} <span style="font-size:10px;color:#bbb">▾</span></span></div>` +
     otherRows.map(r => {
       const dot = r.dot ? `<div class="modal-status-dot" style="background:${r.dot}"></div>` : '';
       return `<div class="modal-row"><span class="modal-label">${r.label}</span>${dot}<span class="modal-value">${r.value}</span></div>`;
     }).join('') +
+    recRow +
     `<div class="modal-row"><span class="modal-label">Due date</span><span class="modal-value due-date-btn" onclick="openDatePicker()" title="Click to change due date">${dueDateFmt}<span class="edit-pencil">✎</span></span></div>`;
   document.getElementById('modal-state-value').addEventListener('click', e => {
     openStatusDropdown(currentModalIssue, e.currentTarget);
