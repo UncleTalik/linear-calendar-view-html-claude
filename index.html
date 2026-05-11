@@ -632,20 +632,37 @@ function formatRecurrence(template) {
   let rule = '';
   if (entries.length) {
     const e = entries[0] || {};
-    const raw = (e.frequency || e.freq || e.type || e.unit || e.cadence || '').toString().toLowerCase();
-    const interval = e.interval || e.every || e.repeat || 1;
-    const noun = { daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year',
-                   day: 'day', week: 'week', month: 'month', year: 'year' }[raw] || raw;
+    // Flatten one level of nested objects so we can find fields wherever Linear stashes them.
+    const flat = { ...e };
+    for (const k of Object.keys(e)) {
+      const v = e[k];
+      if (v && typeof v === 'object' && !Array.isArray(v)) Object.assign(flat, v);
+    }
+    const rawUnit = (flat.frequency || flat.freq || flat.type || flat.unit ||
+                     flat.cadence || flat.period || flat.kind || flat.granularity || '')
+                    .toString().toLowerCase();
+    const intervalRaw = flat.interval ?? flat.every ?? flat.repeat ?? flat.count ??
+                        flat.value ?? flat.n ?? flat.times ?? flat.quantity ?? flat.amount ??
+                        (rawUnit ? flat[rawUnit] : undefined);
+    const interval = Number(intervalRaw) > 0 ? Number(intervalRaw) : 1;
+    const nounMap = {
+      daily: 'day', day: 'day', days: 'day',
+      weekly: 'week', week: 'week', weeks: 'week',
+      monthly: 'month', month: 'month', months: 'month',
+      yearly: 'year', year: 'year', years: 'year',
+      annually: 'year', annual: 'year'
+    };
+    const noun = nounMap[rawUnit] || rawUnit.replace(/ly$/, '').replace(/s$/, '');
     if (noun) {
-      rule = interval > 1 ? `Every ${interval} ${noun}s` : `Every ${noun}`;
-      const days = e.byDay || e.byday || e.days || e.daysOfWeek;
-      if (days) {
+      rule = `Every ${interval} ${noun}${interval === 1 ? '' : 's'}`;
+      const days = flat.byDay || flat.byday || flat.days || flat.daysOfWeek;
+      if (days && !['day','days','daily'].includes(rawUnit)) {
         const dayStr = Array.isArray(days) ? days.join(', ') : String(days);
         if (dayStr) rule += ` on ${dayStr}`;
       }
     }
   }
-  return { name: template.name || 'Recurring', rule };
+  return { name: template.name || 'Recurring', rule, debug: JSON.stringify(schedule) };
 }
 
 function escapeHtml(s) {
@@ -910,7 +927,7 @@ function openModal(issue) {
     : '—';
   const rec = formatRecurrence(issue.recurringIssueTemplate);
   const recRow = rec
-    ? `<div class="modal-row"><span class="modal-label">Recurrence</span><span class="modal-recurring-icon" title="Recurring">↻</span><span class="modal-value">${escapeHtml(rec.name)}${rec.rule ? ' · ' + escapeHtml(rec.rule) : ''}</span></div>`
+    ? `<div class="modal-row" title="${escapeHtml(rec.debug || '')}"><span class="modal-label">Recurrence</span><span class="modal-recurring-icon" title="Recurring">↻</span><span class="modal-value">${escapeHtml(rec.name)}${rec.rule ? ' · ' + escapeHtml(rec.rule) : ''}</span></div>`
     : '';
   meta.innerHTML =
     `<div class="modal-row" id="modal-status-row"><span class="modal-label">Status</span><div class="modal-status-dot" id="modal-state-dot" style="background:${stateCol}"></div><span class="modal-value modal-status-btn" id="modal-state-value" title="Click to change status">${issue.state?.name || '—'} <span style="font-size:10px;color:#bbb">▾</span></span></div>` +
